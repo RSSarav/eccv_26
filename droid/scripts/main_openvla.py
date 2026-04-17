@@ -38,6 +38,9 @@ class Args:
     max_timesteps: int = 600
     open_loop_horizon: int = 8
     external_camera: str = "left"
+    gripper_mode: str = "binary_hysteresis"  # one of ["continuous", "binary_hysteresis"]
+    gripper_open_threshold: float = 0.65
+    gripper_close_threshold: float = 0.35
 
     # Remote server parameters (OpenVLA deploy.py)
     # Use localhost for same-machine, or GPU machine IP for cross-machine
@@ -47,6 +50,7 @@ class Args:
     # Dataset key for action de-normalization.
     unnorm_key: str | None = "pick_up_red_cube_200"
     run_startup_sanity_check: bool = True
+    save_startup_main_camera_image: bool = True
 
 
 @contextlib.contextmanager
@@ -84,6 +88,16 @@ def _tile_images(left: np.ndarray, wrist: np.ndarray, right: np.ndarray) -> np.n
 
 
 def main(args: Args):
+    assert args.external_camera in {"left", "right"}, (
+        f"Please set external_camera to 'left' or 'right', got: {args.external_camera}"
+    )
+    assert args.gripper_mode in {"continuous", "binary_hysteresis"}, (
+        f"Unsupported gripper_mode={args.gripper_mode}. Use 'continuous' or 'binary_hysteresis'."
+    )
+    assert 0.0 <= args.gripper_close_threshold <= args.gripper_open_threshold <= 1.0, (
+        "Expected 0 <= gripper_close_threshold <= gripper_open_threshold <= 1."
+    )
+
     # OpenVLA fine-tuned models output 7-dim Cartesian delta pose: [dx, dy, dz, dRx, dRy, dRz, gripper]
     env = RobotEnv(action_space="cartesian_velocity", gripper_action_space="position")
     print("Created the droid env!")
@@ -97,6 +111,9 @@ def main(args: Args):
         print("Running one-time startup sanity check (no robot motion).")
         startup_obs = _extract_observation(args, env.get_observation(), save_to_disk=True)
         startup_payload = _build_payload(args, startup_obs, instruction="pick up the red cube")
+        if args.save_startup_main_camera_image:
+            Image.fromarray(startup_payload["full_image"]).save("robot_main_camera_view.png")
+            print("Saved startup main camera image to robot_main_camera_view.png")
         print(
             "Startup payload diagnostics:",
             {
@@ -138,6 +155,9 @@ def main(args: Args):
         timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
         bar = tqdm.tqdm(range(args.max_timesteps))
         print("Running rollout... press Ctrl+C to stop early.")
+        actions_from_chunk_completed = 0
+        pred_action_chunk = None
+        prev_gripper_cmd = None
 
         for t_step in bar:
             start_time = time.time()
@@ -156,33 +176,31 @@ def main(args: Args):
                 )
                 video.append(tiled)
 
-                payload = _build_payload(args, curr_obs, instruction)
+                if prev_gripper_cmd is None:
+                    prev_gripper_cmd = float(np.clip(curr_obs["gripper_position"], 0.0, 1.0))
 
-                # Query OpenVLA server for an action chunk.
-                with prevent_keyboard_interrupt():
-                    response = requests.post(server_url, json=payload)
-                    response.raise_for_status()
-                    pred_action_chunk = np.asarray(response.json(), dtype=np.float32)
+                # Query OpenVLA server only when we need a fresh action chunk.
+                need_new_chunk = (
+                    pred_action_chunk is None
+                    or actions_from_chunk_completed >= min(args.open_loop_horizon, pred_action_chunk.shape[0])
+                    or actions_from_chunk_completed >= pred_action_chunk.shape[0]
+                )
+                if need_new_chunk:
+                    actions_from_chunk_completed = 0
+                    payload = _build_payload(args, curr_obs, instruction)
+                    with prevent_keyboard_interrupt():
+                        response = requests.post(server_url, json=payload)
+                        response.raise_for_status()
+                        pred_action_chunk = np.asarray(response.json(), dtype=np.float32)
+                    if pred_action_chunk.ndim == 1:
+                        pred_action_chunk = pred_action_chunk[None, :]
+                    if pred_action_chunk.ndim != 2 or pred_action_chunk.shape[-1] != 7:
+                        raise ValueError(f"Expected action chunk shape [N, 7], got {pred_action_chunk.shape}")
 
-                if pred_action_chunk.ndim == 1:
-                    pred_action_chunk = pred_action_chunk[None, :]
-                if pred_action_chunk.ndim != 2 or pred_action_chunk.shape[-1] != 7:
-                    raise ValueError(f"Expected action chunk shape [N, 7], got {pred_action_chunk.shape}")
-
-                open_loop_horizon = min(args.open_loop_horizon, pred_action_chunk.shape[0])
-                for h in range(open_loop_horizon):
-                    action = pred_action_chunk[h]
-                    # DROID velocity control asserts all action dims are in [-1, 1].
-                    # Keep arm deltas in [-1, 1] and gripper position in [0, 1].
-                    arm_cmd = np.clip(action[:6], -1.0, 1.0)
-                    gripper_cmd = np.clip(action[6], 0.0, 1.0)
-                    action_to_env = np.concatenate([arm_cmd, [gripper_cmd]], axis=0).astype(np.float32)
-                    if np.any(np.abs(action_to_env[:6] - action[:6]) > 1e-6) or abs(action_to_env[6] - action[6]) > 1e-6:
-                        print(
-                            "Clipped action to env bounds:",
-                            {"raw": action.tolist(), "clipped": action_to_env.tolist()},
-                        )
-                    env.step(action_to_env)
+                action = pred_action_chunk[actions_from_chunk_completed]
+                action_to_env, prev_gripper_cmd = _postprocess_action(args, action, prev_gripper_cmd)
+                actions_from_chunk_completed += 1
+                env.step(action_to_env)
 
                 elapsed = time.time() - start_time
                 if elapsed < 1 / DROID_CONTROL_FREQUENCY:
@@ -298,6 +316,32 @@ def _build_payload(args: Args, curr_obs, instruction: str):
     if args.unnorm_key is not None:
         payload["unnorm_key"] = args.unnorm_key
     return payload
+
+
+def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float):
+    # DROID velocity control asserts all action dims are in [-1, 1].
+    arm_cmd = np.clip(action[:6], -1.0, 1.0)
+    raw_gripper = float(np.clip(action[6], 0.0, 1.0))
+
+    if args.gripper_mode == "continuous":
+        gripper_cmd = raw_gripper
+    else:
+        if raw_gripper >= args.gripper_open_threshold:
+            gripper_cmd = 1.0
+        elif raw_gripper <= args.gripper_close_threshold:
+            gripper_cmd = 0.0
+        else:
+            gripper_cmd = prev_gripper_cmd
+
+    action_to_env = np.concatenate([arm_cmd, [gripper_cmd]], axis=0).astype(np.float32)
+
+    if np.any(np.abs(action_to_env[:6] - action[:6]) > 1e-6) or abs(action_to_env[6] - action[6]) > 1e-6:
+        print(
+            "Postprocessed action:",
+            {"raw": action.tolist(), "processed": action_to_env.tolist(), "gripper_mode": args.gripper_mode},
+        )
+
+    return action_to_env, gripper_cmd
 
 
 if __name__ == "__main__":
