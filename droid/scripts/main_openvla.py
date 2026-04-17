@@ -326,7 +326,7 @@ def _build_payload(args: Args, curr_obs, instruction: str):
 
 
 def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float):
-    # Keep arm clipping for safety; let gripper pass through unbounded if requested.
+    # DROID RobotEnv.step asserts every action dim in [-1, 1]. Gripper position is [0, 1] (open..close), never negative.
     arm_cmd = np.clip(action[:6], -1.0, 1.0)
     raw_gripper = float(action[6])
 
@@ -341,6 +341,8 @@ def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float)
             gripper_cmd = prev_gripper_cmd
 
     action_to_env = np.concatenate([arm_cmd, [gripper_cmd]], axis=0).astype(np.float32)
+    action_to_env[:6] = np.clip(action_to_env[:6], -1.0, 1.0)
+    action_to_env[6] = np.clip(action_to_env[6], 0.0, 1.0)
 
     if np.any(np.abs(action_to_env[:6] - action[:6]) > 1e-6) or abs(action_to_env[6] - action[6]) > 1e-6:
         print(
@@ -348,7 +350,7 @@ def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float)
             {"raw": action.tolist(), "processed": action_to_env.tolist(), "gripper_mode": args.gripper_mode},
         )
 
-    return action_to_env, gripper_cmd
+    return action_to_env, float(action_to_env[6])
 
 
 def _run_action_diagnostics(args: Args, env: RobotEnv, server_url: str, instruction: str):
