@@ -524,7 +524,10 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
             _register_qproj_head_grad_masks(vla, selected_heads)
         vla.print_trainable_parameters()
 
-    vla = DDP(vla, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
+    use_ddp = dist.is_available() and dist.is_initialized()
+    if use_ddp:
+        vla = DDP(vla, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
+    vla_core = vla.module if hasattr(vla, "module") else vla
 
     action_head = None
     noisy_action_projector = None
@@ -536,8 +539,8 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
             cfg=cfg,
             device_id=device_id,
             module_args={
-                "input_dim": vla.module.llm_dim,
-                "hidden_dim": vla.module.llm_dim,
+                "input_dim": vla_core.llm_dim,
+                "hidden_dim": vla_core.llm_dim,
                 "action_dim": ACTION_DIM,
                 **({"num_diffusion_steps_train": cfg.num_diffusion_steps_train} if cfg.use_diffusion else {}),
             },
@@ -549,7 +552,7 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
             module_name="noisy_action_projector",
             cfg=cfg,
             device_id=device_id,
-            module_args={"llm_dim": vla.module.llm_dim},
+            module_args={"llm_dim": vla_core.llm_dim},
             to_bf16=True,
         )
     if cfg.use_proprio:
@@ -558,7 +561,7 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
             module_name="proprio_projector",
             cfg=cfg,
             device_id=device_id,
-            module_args={"in_dim": PROPRIO_DIM, "out_dim": vla.module.llm_dim},
+            module_args={"in_dim": PROPRIO_DIM, "out_dim": vla_core.llm_dim},
             to_bf16=True,
         )
 
@@ -576,7 +579,7 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
     if distributed_state.is_main_process:
         save_dataset_statistics(train_dataset.dataset_statistics, run_dir)
 
-    num_patches = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
+    num_patches = vla_core.vision_backbone.get_num_patches() * vla_core.vision_backbone.get_num_images_in_input()
     if cfg.use_proprio:
         num_patches += 1
     if cfg.use_diffusion:

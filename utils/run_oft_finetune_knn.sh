@@ -38,7 +38,7 @@ echo "Using GPU: ${GPU_ID}"
 echo "Policy output folder: ${POLICY_DIR}"
 echo "Log file: ${POLICY_DIR}/stdout.log"
 
-CUDA_VISIBLE_DEVICES="${GPU_ID}" torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune_knn.py \
+CUDA_VISIBLE_DEVICES="${GPU_ID}" python vla-scripts/finetune_knn.py \
   --vla_path "openvla/openvla-7b" \
   --data_root_dir "${DATA_ROOT_DIR}" \
   --dataset_name "${DATASET_NAME}" \
