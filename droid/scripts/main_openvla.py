@@ -51,6 +51,9 @@ class Args:
     unnorm_key: str | None = "pick_up_red_cube_200"
     run_startup_sanity_check: bool = True
     save_startup_main_camera_image: bool = True
+    action_diagnostics_only: bool = False
+    action_diagnostics_steps: int = 300
+    action_diagnostics_log_every: int = 25
 
 
 @contextlib.contextmanager
@@ -144,6 +147,10 @@ def main(args: Args):
         if startup_chunk.ndim != 2 or startup_chunk.shape[-1] != 7:
             raise ValueError(f"Expected startup action chunk shape [N, 7], got {startup_chunk.shape}")
         print("Startup sanity check passed.\n")
+
+    if args.action_diagnostics_only:
+        _run_action_diagnostics(args, env, server_url, instruction="pick up the red cube")
+        return
 
     df = pd.DataFrame(columns=["success", "duration", "video_filename"])
 
@@ -342,6 +349,58 @@ def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float)
         )
 
     return action_to_env, gripper_cmd
+
+
+def _run_action_diagnostics(args: Args, env: RobotEnv, server_url: str, instruction: str):
+    print(
+        f"Running action diagnostics only (no robot motion) for {args.action_diagnostics_steps} policy actions."
+    )
+    pred_action_chunk = None
+    chunk_idx = 0
+    actions_seen = 0
+    all_actions = []
+
+    while actions_seen < args.action_diagnostics_steps:
+        step_start = time.time()
+        curr_obs = _extract_observation(args, env.get_observation(), save_to_disk=actions_seen == 0)
+        need_new_chunk = pred_action_chunk is None or chunk_idx >= pred_action_chunk.shape[0]
+        if need_new_chunk:
+            payload = _build_payload(args, curr_obs, instruction)
+            with prevent_keyboard_interrupt():
+                response = requests.post(server_url, json=payload)
+                response.raise_for_status()
+                pred_action_chunk = np.asarray(response.json(), dtype=np.float32)
+            if pred_action_chunk.ndim == 1:
+                pred_action_chunk = pred_action_chunk[None, :]
+            if pred_action_chunk.ndim != 2 or pred_action_chunk.shape[-1] != 7:
+                raise ValueError(f"Expected action chunk shape [N, 7], got {pred_action_chunk.shape}")
+            chunk_idx = 0
+
+        action = pred_action_chunk[chunk_idx]
+        all_actions.append(action.astype(np.float32))
+        chunk_idx += 1
+        actions_seen += 1
+
+        if actions_seen % args.action_diagnostics_log_every == 0 or actions_seen == args.action_diagnostics_steps:
+            mat = np.stack(all_actions, axis=0)
+            per_dim_min = np.min(mat, axis=0)
+            per_dim_max = np.max(mat, axis=0)
+            oob = np.logical_or(mat < -1.0, mat > 1.0)
+            oob_frac = np.mean(oob, axis=0)
+            print(
+                "Action diagnostics:",
+                {
+                    "actions_seen": actions_seen,
+                    "per_dim_min": per_dim_min.tolist(),
+                    "per_dim_max": per_dim_max.tolist(),
+                    "oob_fraction_per_dim": oob_frac.tolist(),
+                    "total_oob_fraction": float(np.mean(oob)),
+                },
+            )
+
+        elapsed = time.time() - step_start
+        if elapsed < 1 / DROID_CONTROL_FREQUENCY:
+            time.sleep(1 / DROID_CONTROL_FREQUENCY - elapsed)
 
 
 if __name__ == "__main__":
