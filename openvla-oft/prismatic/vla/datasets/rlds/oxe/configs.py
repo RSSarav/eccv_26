@@ -657,6 +657,86 @@ OXE_DATASET_CONFIGS = {
             },
         },
     },
+    "place_green_cube_in_red_bowl": {
+        "image_obs_keys": {
+            "primary": "exterior_image_1_left",
+            "secondary": "exterior_image_2_left",
+            "wrist": "wrist_image_left",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
+    },
+    "place_marker_in_red_mug": {
+        "image_obs_keys": {
+            "primary": "exterior_image_1_left",
+            "secondary": "exterior_image_2_left",
+            "wrist": "wrist_image_left",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
+    },
+    "push_button_hard": {
+        "image_obs_keys": {
+            "primary": "exterior_image_1_left",
+            "secondary": "exterior_image_2_left",
+            "wrist": "wrist_image_left",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
+    },
+    "push_cup_to_red_bowl": {
+        "image_obs_keys": {
+            "primary": "exterior_image_1_left",
+            "secondary": "exterior_image_2_left",
+            "wrist": "wrist_image_left",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
+    },
+    "swap_the_green_cube_with_red_cube_in_the_red_bowl": {
+        "image_obs_keys": {
+            "primary": "exterior_image_1_left",
+            "secondary": "exterior_image_2_left",
+            "wrist": "wrist_image_left",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
+    },
     ### LIBERO datasets (modified versions)
     "libero_spatial_no_noops": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": "wrist_image"},

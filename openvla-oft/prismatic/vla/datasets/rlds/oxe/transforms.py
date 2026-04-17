@@ -851,6 +851,28 @@ def pick_up_red_cube_200_dataset_transform(trajectory: Dict[str, Any]) -> Dict[s
     return droid_finetuning_transform(trajectory)
 
 
+def place_green_cube_in_red_bowl_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    return droid_finetuning_transform(trajectory)
+
+
+def place_marker_in_red_mug_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    return droid_finetuning_transform(trajectory)
+
+
+def push_button_hard_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    return droid_finetuning_transform(trajectory)
+
+
+def push_cup_to_red_bowl_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    return droid_finetuning_transform(trajectory)
+
+
+def swap_the_green_cube_with_red_cube_in_the_red_bowl_dataset_transform(
+    trajectory: Dict[str, Any]
+) -> Dict[str, Any]:
+    return droid_finetuning_transform(trajectory)
+
+
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
     "bridge_oxe": bridge_oxe_dataset_transform,
@@ -925,6 +947,11 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     ### DROID Finetuning datasets
     "droid_wipe": droid_finetuning_transform,
     "pick_up_red_cube_200": pick_up_red_cube_200_dataset_transform,
+    "place_green_cube_in_red_bowl": place_green_cube_in_red_bowl_dataset_transform,
+    "place_marker_in_red_mug": place_marker_in_red_mug_dataset_transform,
+    "push_button_hard": push_button_hard_dataset_transform,
+    "push_cup_to_red_bowl": push_cup_to_red_bowl_dataset_transform,
+    "swap_the_green_cube_with_red_cube_in_the_red_bowl": swap_the_green_cube_with_red_cube_in_the_red_bowl_dataset_transform,
     ### LIBERO datasets (modified versions)
     "libero_spatial_no_noops": libero_dataset_transform,
     "libero_object_no_noops": libero_dataset_transform,

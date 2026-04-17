@@ -192,6 +192,32 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "droid_wipe": [
         ("droid_wipe", 1.0),
     ],
+    "pick_up_red_cube_200": [
+        ("pick_up_red_cube_200", 1.0),
+    ],
+    "place_green_cube_in_red_bowl": [
+        ("place_green_cube_in_red_bowl", 1.0),
+    ],
+    "place_marker_in_red_mug": [
+        ("place_marker_in_red_mug", 1.0),
+    ],
+    "push_button_hard": [
+        ("push_button_hard", 1.0),
+    ],
+    "push_cup_to_red_bowl": [
+        ("push_cup_to_red_bowl", 1.0),
+    ],
+    "swap_the_green_cube_with_red_cube_in_the_red_bowl": [
+        ("swap_the_green_cube_with_red_cube_in_the_red_bowl", 1.0),
+    ],
+    "eccv_26_multi_task": [
+        ("pick_up_red_cube_200", 1.0),
+        ("place_green_cube_in_red_bowl", 1.0),
+        ("place_marker_in_red_mug", 1.0),
+        ("push_button_hard", 1.0),
+        ("push_cup_to_red_bowl", 1.0),
+        ("swap_the_green_cube_with_red_cube_in_the_red_bowl", 1.0),
+    ],
 
     # === LIBERO Datasets (Modified Versions) ===
     "libero_spatial_no_noops": [
