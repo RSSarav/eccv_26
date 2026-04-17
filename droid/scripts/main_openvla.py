@@ -84,7 +84,7 @@ def _tile_images(left: np.ndarray, wrist: np.ndarray, right: np.ndarray) -> np.n
 
 def main(args: Args):
     # OpenVLA fine-tuned models output 7-dim Cartesian delta pose: [dx, dy, dz, dRx, dRy, dRz, gripper]
-    env = RobotEnv(action_space="cartesian_position", gripper_action_space="position")
+    env = RobotEnv(action_space="cartesian_velocity", gripper_action_space="position")
     print("Created the droid env!")
 
     server_url = f"http://{args.remote_host}:{args.remote_port}/act"
