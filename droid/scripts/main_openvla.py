@@ -319,9 +319,9 @@ def _build_payload(args: Args, curr_obs, instruction: str):
 
 
 def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float):
-    # DROID velocity control asserts all action dims are in [-1, 1].
+    # Keep arm clipping for safety; let gripper pass through unbounded if requested.
     arm_cmd = np.clip(action[:6], -1.0, 1.0)
-    raw_gripper = float(np.clip(action[6], 0.0, 1.0))
+    raw_gripper = float(action[6])
 
     if args.gripper_mode == "continuous":
         gripper_cmd = raw_gripper
