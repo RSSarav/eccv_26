@@ -113,7 +113,7 @@ class DeployConfig:
 
     # Server Configuration
     host: str = "0.0.0.0"                                               # Host IP Address
-    port: int = 8777                                                    # Host Port
+    port: int = 8000                                                    # Host Port
 
     #################################################################################################################
     # Model-specific parameters
@@ -126,14 +126,14 @@ class DeployConfig:
     num_diffusion_steps_train: int = 50              # (When `diffusion==True`) Number of diffusion steps used for training
     num_diffusion_steps_inference: int = 50          # (When `diffusion==True`) Number of diffusion steps used for inference
     use_film: bool = False                           # If True, uses FiLM to infuse language inputs into visual features
-    num_images_in_input: int = 3                     # Number of images in the VLA input (default: 3)
+    num_images_in_input: int = 2                     # Number of images in the VLA input (default: 2 for DROID-style)
     use_proprio: bool = True                         # Whether to include proprio state in input
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug)
 
     lora_rank: int = 32                              # Rank of LoRA weight matrix (MAKE SURE THIS MATCHES TRAINING!)
 
-    unnorm_key: Union[str, Path] = ""                # Action un-normalization key
+    unnorm_key: Union[str, Path] = "pick_up_red_cube_200"  # Action un-normalization key
     use_relative_actions: bool = False               # Whether to use relative actions (delta joint angles)
 
     load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
