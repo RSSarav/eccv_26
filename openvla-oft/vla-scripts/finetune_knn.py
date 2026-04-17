@@ -39,7 +39,7 @@ from prismatic.vla.constants import (
     NUM_ACTIONS_CHUNK,
     PROPRIO_DIM,
 )
-from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
+from prismatic.vla.datasets import EpisodicRLDSDataset, RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 
@@ -201,7 +201,9 @@ def _subset_mse_for_k(
 
 def select_topk_heads_with_knn(
     vla: torch.nn.Module,
-    knn_dataset: RLDSDataset,
+    knn_dataset: EpisodicRLDSDataset,
+    batch_transform: RLDSBatchTransform,
+    action_tokenizer: ActionTokenizer,
     device_id: int,
     k_neighbors: int,
     number_heads: int,
@@ -222,26 +224,28 @@ def select_topk_heads_with_knn(
 
     with torch.no_grad():
         sample_count = 0
-        for i, transformed in enumerate(knn_dataset):
+        for ep_idx, rlds_episode in enumerate(knn_dataset.dataset.as_numpy_iterator()):
+            ep_len = int(rlds_episode["action"].shape[0])
+            for t in range(ep_len):
+                if sample_count >= max_samples:
+                    break
+                rlds_step = tree_map(lambda x: x[t], rlds_episode)
+                transformed = batch_transform(rlds_step)
+                input_ids = transformed["input_ids"].unsqueeze(0).to(device_id)
+                labels = transformed["labels"]
+                pixel_values = transformed["pixel_values"].unsqueeze(0).to(torch.bfloat16).to(device_id)
+                attention_mask = torch.ones_like(input_ids).to(device_id)
+
+                extractor.clear()
+                extractor.set_token_idx(_pick_token_index(labels, token_mode=token_mode))
+                _ = vla(input_ids=input_ids, attention_mask=attention_mask, pixel_values=pixel_values)
+                activations.append(extractor.snapshot())
+                actions.append(_extract_action_target(transformed, rlds_step, action_tokenizer))
+                episode_ids.append(ep_idx)
+                frame_ids.append(t)
+                sample_count += 1
             if sample_count >= max_samples:
                 break
-            input_ids = transformed["input_ids"].unsqueeze(0).to(device_id)
-            labels = transformed["labels"]
-            pixel_values = transformed["pixel_values"].unsqueeze(0).to(torch.bfloat16).to(device_id)
-            attention_mask = torch.ones_like(input_ids).to(device_id)
-
-            extractor.clear()
-            extractor.set_token_idx(_pick_token_index(labels, token_mode=token_mode))
-            _ = vla(input_ids=input_ids, attention_mask=attention_mask, pixel_values=pixel_values)
-            activations.append(extractor.snapshot())
-
-            # Prefer transformed continuous actions if available.
-            action_vec = torch.as_tensor(transformed["actions"][0], dtype=torch.float32).reshape(-1)
-            actions.append(action_vec)
-            # Use pseudo-episode/frame IDs for temporal exclusion fallback.
-            episode_ids.append(i // 1000)
-            frame_ids.append(i % 1000)
-            sample_count += 1
 
     extractor.remove()
     if len(activations) < 2:
@@ -456,7 +460,7 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
     selected_heads: Optional[List[Tuple[int, int]]] = None
     head_scores: Dict[str, float] = {}
     if cfg.knn:
-        knn_dataset = RLDSDataset(
+        episodic_dataset = EpisodicRLDSDataset(
             cfg.data_root_dir,
             cfg.dataset_name,
             batch_transform,
@@ -468,7 +472,9 @@ def finetune_knn(cfg: FinetuneKNNConfig) -> None:
         if distributed_state.is_main_process:
             selected_heads, head_scores = select_topk_heads_with_knn(
                 vla=vla,
-                knn_dataset=knn_dataset,
+                knn_dataset=episodic_dataset,
+                batch_transform=batch_transform,
+                action_tokenizer=action_tokenizer,
                 device_id=device_id,
                 k_neighbors=cfg.knn_neighbors,
                 number_heads=cfg.number_heads,

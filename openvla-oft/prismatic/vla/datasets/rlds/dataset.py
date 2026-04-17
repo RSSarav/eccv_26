@@ -436,11 +436,16 @@ def make_single_dataset(
         traj_transform_kwargs: kwargs passed to 'apply_trajectory_transforms'.
         frame_transform_kwargs: kwargs passed to 'get_frame_transforms'.
     """
+    data_kwargs = copy.deepcopy(dataset_kwargs)
+    dataset_frame_transform_kwargs = (
+        data_kwargs.pop("dataset_frame_transform_kwargs") if "dataset_frame_transform_kwargs" in data_kwargs else {}
+    )
     dataset, dataset_statistics = make_dataset_from_rlds(
-        **dataset_kwargs,
+        **data_kwargs,
         train=train,
     )
     dataset = apply_trajectory_transforms(dataset, **traj_transform_kwargs, train=train)
+    dataset = apply_per_dataset_frame_transforms(dataset, **dataset_frame_transform_kwargs)
     dataset = apply_frame_transforms(dataset, **frame_transform_kwargs, train=train)
 
     # this seems to reduce memory usage without affecting speed
