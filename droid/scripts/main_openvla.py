@@ -172,7 +172,16 @@ def main(args: Args):
                 open_loop_horizon = min(args.open_loop_horizon, pred_action_chunk.shape[0])
                 for h in range(open_loop_horizon):
                     action = pred_action_chunk[h]
-                    action_to_env = np.concatenate([action[:6], [action[6]]], axis=0)
+                    # DROID velocity control asserts all action dims are in [-1, 1].
+                    # Keep arm deltas in [-1, 1] and gripper position in [0, 1].
+                    arm_cmd = np.clip(action[:6], -1.0, 1.0)
+                    gripper_cmd = np.clip(action[6], 0.0, 1.0)
+                    action_to_env = np.concatenate([arm_cmd, [gripper_cmd]], axis=0).astype(np.float32)
+                    if np.any(np.abs(action_to_env[:6] - action[:6]) > 1e-6) or abs(action_to_env[6] - action[6]) > 1e-6:
+                        print(
+                            "Clipped action to env bounds:",
+                            {"raw": action.tolist(), "clipped": action_to_env.tolist()},
+                        )
                     env.step(action_to_env)
 
                 elapsed = time.time() - start_time
