@@ -46,6 +46,7 @@ class Args:
 
     # Dataset key for action de-normalization.
     unnorm_key: str | None = "pick_up_red_cube_200"
+    run_startup_sanity_check: bool = True
 
 
 @contextlib.contextmanager
@@ -90,6 +91,43 @@ def main(args: Args):
     server_url = f"http://{args.remote_host}:{args.remote_port}/act"
     print(f"OpenVLA server: {server_url}")
 
+    # One-time startup sanity check to validate request/response contract.
+    # This sends a single inference request and prints diagnostics without stepping the robot.
+    if args.run_startup_sanity_check:
+        print("Running one-time startup sanity check (no robot motion).")
+        startup_obs = _extract_observation(args, env.get_observation(), save_to_disk=True)
+        startup_payload = _build_payload(args, startup_obs, instruction="pick up the red cube")
+        print(
+            "Startup payload diagnostics:",
+            {
+                "keys": list(startup_payload.keys()),
+                "full_image_shape": tuple(startup_payload["full_image"].shape),
+                "wrist_image_shape": tuple(startup_payload["wrist_image"].shape),
+                "state_shape": tuple(startup_payload["state"].shape),
+                "state_dtype": str(startup_payload["state"].dtype),
+                "state_min": float(np.min(startup_payload["state"])),
+                "state_max": float(np.max(startup_payload["state"])),
+                "unnorm_key": startup_payload.get("unnorm_key", None),
+            },
+        )
+        with prevent_keyboard_interrupt():
+            startup_response = requests.post(server_url, json=startup_payload)
+            startup_response.raise_for_status()
+            startup_chunk = np.asarray(startup_response.json(), dtype=np.float32)
+        if startup_chunk.ndim == 1:
+            startup_chunk = startup_chunk[None, :]
+        print(
+            "Startup response diagnostics:",
+            {
+                "chunk_shape": tuple(startup_chunk.shape),
+                "chunk_dtype": str(startup_chunk.dtype),
+                "first_action": startup_chunk[0].tolist() if startup_chunk.shape[0] > 0 else None,
+            },
+        )
+        if startup_chunk.ndim != 2 or startup_chunk.shape[-1] != 7:
+            raise ValueError(f"Expected startup action chunk shape [N, 7], got {startup_chunk.shape}")
+        print("Startup sanity check passed.\n")
+
     df = pd.DataFrame(columns=["success", "duration", "video_filename"])
 
     while True:
@@ -118,29 +156,7 @@ def main(args: Args):
                 )
                 video.append(tiled)
 
-                if args.external_camera == "left":
-                    full_image = curr_obs["left_image"]
-                elif args.external_camera == "right":
-                    full_image = curr_obs["right_image"]
-                else:
-                    raise ValueError(f"Unsupported external_camera={args.external_camera}; use 'left' or 'right'")
-
-                proprio = np.concatenate(
-                    [
-                        curr_obs["cartesian_position"],
-                        [curr_obs["gripper_position"]],
-                    ],
-                    axis=0,
-                ).astype(np.float32)
-
-                payload = {
-                    "full_image": full_image.astype(np.uint8),
-                    "wrist_image": curr_obs["wrist_image"].astype(np.uint8),
-                    "state": proprio,
-                    "instruction": instruction,
-                }
-                if args.unnorm_key is not None:
-                    payload["unnorm_key"] = args.unnorm_key
+                payload = _build_payload(args, curr_obs, instruction)
 
                 # Query OpenVLA server for an action chunk.
                 with prevent_keyboard_interrupt():
@@ -230,13 +246,49 @@ def _extract_observation(args: Args, obs_dict, *, save_to_disk=False):
         combined = np.concatenate([left_image, wrist_image, right_image], axis=1)
         Image.fromarray(combined).save("robot_camera_views.png")
 
+    # DROID RobotEnv exposes proprio under obs_dict["robot_state"], but keep
+    # a fallback for wrappers that flatten keys at the top level.
+    robot_state = obs_dict.get("robot_state", obs_dict)
+    if "cartesian_position" not in robot_state or "gripper_position" not in robot_state:
+        raise KeyError(
+            "Observation missing proprio keys. Expected cartesian/gripper in "
+            "obs_dict['robot_state'] or top-level."
+        )
+
     return {
         "left_image": left_image,
         "right_image": right_image,
         "wrist_image": wrist_image,
-        "cartesian_position": np.asarray(obs_dict["cartesian_position"], dtype=np.float32),
-        "gripper_position": float(obs_dict["gripper_position"]),
+        "cartesian_position": np.asarray(robot_state["cartesian_position"], dtype=np.float32),
+        "gripper_position": float(robot_state["gripper_position"]),
     }
+
+
+def _build_payload(args: Args, curr_obs, instruction: str):
+    if args.external_camera == "left":
+        full_image = curr_obs["left_image"]
+    elif args.external_camera == "right":
+        full_image = curr_obs["right_image"]
+    else:
+        raise ValueError(f"Unsupported external_camera={args.external_camera}; use 'left' or 'right'")
+
+    proprio = np.concatenate(
+        [
+            curr_obs["cartesian_position"],
+            [curr_obs["gripper_position"]],
+        ],
+        axis=0,
+    ).astype(np.float32)
+
+    payload = {
+        "full_image": full_image.astype(np.uint8),
+        "wrist_image": curr_obs["wrist_image"].astype(np.uint8),
+        "state": proprio,
+        "instruction": instruction,
+    }
+    if args.unnorm_key is not None:
+        payload["unnorm_key"] = args.unnorm_key
+    return payload
 
 
 if __name__ == "__main__":
