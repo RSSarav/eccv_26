@@ -41,6 +41,8 @@ class Args:
     gripper_mode: str = "binary_hysteresis"  # one of ["continuous", "binary_hysteresis"]
     gripper_open_threshold: float = 0.65
     gripper_close_threshold: float = 0.35
+    # If True, swap sent gripper: g -> 1-g after postprocessing (debug / convention check).
+    invert_gripper_command: bool = False
 
     # Remote server parameters (OpenVLA deploy.py)
     # Use localhost for same-machine, or GPU machine IP for cross-machine
@@ -343,6 +345,8 @@ def _postprocess_action(args: Args, action: np.ndarray, prev_gripper_cmd: float)
     action_to_env = np.concatenate([arm_cmd, [gripper_cmd]], axis=0).astype(np.float32)
     action_to_env[:6] = np.clip(action_to_env[:6], -1.0, 1.0)
     action_to_env[6] = np.clip(action_to_env[6], 0.0, 1.0)
+    if args.invert_gripper_command:
+        action_to_env[6] = 1.0 - float(action_to_env[6])
 
     if np.any(np.abs(action_to_env[:6] - action[:6]) > 1e-6) or abs(action_to_env[6] - action[6]) > 1e-6:
         print(
