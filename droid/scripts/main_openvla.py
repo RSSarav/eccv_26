@@ -156,7 +156,14 @@ def main(args: Args):
 
     df = pd.DataFrame(columns=["success", "duration", "video_filename"])
 
+    eval_index = 0
     while True:
+        # __init__ already homed on first launch; homing again before every subsequent eval.
+        if eval_index > 0:
+            print("Returning robot to home (reset) before this evaluation...")
+            env.reset()
+        eval_index += 1
+
         instruction = "pick up the red cube" #input("Enter instruction: ")
         print(f"Instruction {instruction}")
 
@@ -248,9 +255,9 @@ def main(args: Args):
             ignore_index=True,
         )
 
-        if input("Do one more eval? (enter y or n) ").lower() != "y":
+        again = input("Do one more eval? (enter y or n) ").lower().strip()
+        if again not in ("y", "yes"):
             break
-        env.reset()
 
     os.makedirs("results", exist_ok=True)
     ts = datetime.datetime.now().strftime("%I:%M%p_%B_%d_%Y")
